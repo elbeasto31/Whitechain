@@ -1,39 +1,50 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity 0.8.24;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ItemNFT721} from "./ItemNFT721.sol";
 import {MagicToken} from "./MagicToken.sol";
 
-/**
- * @title Marketplace (Template)
- * @notice Minimal wiring only. No listings or purchase logic yet.
- *
- * TODO :
- * - Implement listing storage (tokenId => (seller, price)).
- * - Implement purchase:
- *   * (spec) burn item on sale and mint MagicToken to seller
- *   * or transfer then burn with a safe authorization flow
- */
 contract Marketplace is AccessControl {
+    struct Listing {
+        address seller;
+        uint256 price;
+        bool active;
+    }
+
     ItemNFT721 public items;
     MagicToken public magic;
 
-    constructor(address admin, ItemNFT721 _items, MagicToken _magic) {
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+    mapping(uint256 => Listing) public listings;
+
+    constructor(ItemNFT721 _items, MagicToken _magic) {
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         items = _items;
         magic = _magic;
     }
 
-    function list(uint256 /*tokenId*/, uint256 /*price*/) external pure {
-        revert("TODO: implement list()");
+    function list(uint256 tokenId, uint256 price) external {
+        require(items.ownerOf(tokenId) == msg.sender, "owner");
+        require(price > 0, "price");
+        listings[tokenId] = Listing(msg.sender, price, true);
     }
 
-    function delist(uint256 /*tokenId*/) external pure {
-        revert("TODO: implement delist()");
+    function delist(uint256 tokenId) external {
+        Listing storage l = listings[tokenId];
+        require(l.active, "inactive");
+        require(l.seller == msg.sender, "seller");
+        delete listings[tokenId];
     }
 
-    function purchase(uint256 /*tokenId*/) external pure {
-        revert("TODO: implement purchase()");
+    function purchase(uint256 tokenId) external {
+        Listing storage l = listings[tokenId];
+        require(l.active, "inactive");
+        require(items.ownerOf(tokenId) == l.seller, "moved");
+
+        items.burn(tokenId);
+
+        l.active = false;
+        magic.mint(l.seller, l.price);
+        delete listings[tokenId];
     }
 }
